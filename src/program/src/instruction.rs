@@ -1,6 +1,9 @@
 use solana_program::program_error::ProgramError;
 use std::convert::TryInto;
 use std::mem::size_of;
+use spl_math::{
+    uint::U256,
+};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -13,6 +16,7 @@ pub enum QFInstruction {
     Withdraw,
     EndRound,
     WithdrawFee,
+    BanProject { ban_amount: U256 },
 }
 
 impl QFInstruction {
@@ -43,6 +47,15 @@ impl QFInstruction {
             5 => Self::Withdraw,
             6 => Self::EndRound,
             7 => Self::WithdrawFee,
+            8 => {
+                let (ban_amount, _rest) = rest.split_at(32);
+                let ban_amount = ban_amount
+                    .try_into()
+                    .ok()
+                    .map(U256::from_little_endian)
+                    .ok_or(ProgramError::InvalidInstructionData)?;
+                Self::BanProject { ban_amount }
+            },
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -66,6 +79,12 @@ impl QFInstruction {
             Self::Withdraw => buf.push(5),
             Self::EndRound => buf.push(6),
             Self::WithdrawFee => buf.push(7),
+            Self::BanProject { ban_amount } => {
+                buf.push(8);
+                let mut dst: [u8; 32] = [0; 32];
+                ban_amount.to_little_endian(&mut dst);
+                buf.extend_from_slice(&dst);
+            },
         };
         buf
     }

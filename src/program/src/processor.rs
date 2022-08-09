@@ -527,6 +527,53 @@ impl Processor {
         Ok(())
     }
 
+    pub fn process_ban_project(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo], 
+        ban_amount: U256,
+    ) -> ProgramResult {
+        let account_info_iter = &mut accounts.iter();
+        let round_info = next_account_info(account_info_iter)?;
+        let owner_info = next_account_info(account_info_iter)?;
+        let project_info = next_account_info(account_info_iter)?;
+
+        if round_info.owner != program_id {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+        let mut round = Round::unpack(&round_info.data.borrow())?;
+        if round.status != RoundStatus::Ongoing {
+            return Err(QFError::RoundStatusError.into());
+        }
+
+        if owner_info.key != &round.owner {
+            return Err(QFError::OwnerMismatch.into());
+        }
+        if !owner_info.is_signer {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        if project_info.owner != program_id {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+        let mut project = Project::unpack(&project_info.data.borrow())?;
+
+        project.area = project.area.checked_sub(ban_amount).unwrap();
+        project.area_sqrt = PreciseNumber {
+            value: project.area.checked_div(U256::from(ONE)).unwrap(),
+        }
+        .sqrt()
+        .unwrap()
+        .value
+        .checked_mul(U256::from(1000000))
+        .unwrap();
+        round.area = round.area.checked_sub(ban_amount).unwrap();
+
+        Round::pack(round, &mut round_info.data.borrow_mut())?;
+        Project::pack(project, &mut project_info.data.borrow_mut())?;
+
+        Ok(())
+    }
+
     /// Processes an [Instruction](enum.Instruction.html).
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = QFInstruction::unpack(input)?;
@@ -562,6 +609,10 @@ impl Processor {
             QFInstruction::WithdrawFee => {
                 msg!("Instruction: WithdrawFee");
                 Self::process_withdraw_fee(program_id, accounts)
+            }
+            QFInstruction::BanProject { ban_amount } => {
+                msg!("Instruction: BanProject");
+                Self::process_ban_project(program_id, accounts, ban_amount)
             }
         }
     }

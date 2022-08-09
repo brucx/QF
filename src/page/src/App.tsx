@@ -1,3 +1,4 @@
+/* eslint-disable import/no-anonymous-default-export */
 import "./App.css";
 import {
   Connection,
@@ -18,15 +19,17 @@ import Wallet from "@project-serum/sol-wallet-adapter";
 import * as BufferLayout from "buffer-layout";
 import * as SPLToken from "@solana/spl-token";
 
+const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
+
 export default () => {
   const programId = new PublicKey(
-    "DzDZWoTSgbh3NHRjDkH61CXbrNn7AY64ooFL6HnNiZm1" // FIXME: you need to deploy your own program and fill it
+    "89GCqzsFDa2Bv9cxuhHEk96r1K5W6rccVZuarw5WEber" // FIXME: you need to deploy your own program and fill it
   );
 
-  const [connection, setConnection] = useState(
-    () => new Connection("http://localhost:8899")
+  const [connection] = useState(
+    () => new Connection("https://api.mainnet-beta.solana.com")
   );
-  const [wallet, setWallet] = useState(
+  const [wallet] = useState(
     () => new Wallet("https://www.sollet.io")
   );
   const [pubkey, setPubkey] = useState(PublicKey.default);
@@ -44,6 +47,9 @@ export default () => {
   const [closeRoundPubkey, setCloseRoundPubkey] = useState("");
   const [withdrawFeeRoundPubkey, setWithdrawFeeRoundPubkey] = useState("");
   const [withdrawFeeToPubkey, setWithdrawFeeToPubkey] = useState("");
+  const [banAmount, setBanAmount] = useState("");
+  const [banProjectPubkey, setBanProjectPubkey] = useState("");
+  const [testPubkey, setTestPubkey] = useState("");
   const [output, setOutput] = useState("");
 
   const RoundAccountDataLayout = BufferLayout.struct([
@@ -131,7 +137,8 @@ export default () => {
         .add(
           SPLToken.Token.createInitAccountInstruction(
             SPLToken.TOKEN_PROGRAM_ID,
-            SPLToken.NATIVE_MINT,
+            // SPLToken.NATIVE_MINT,
+            USDC_MINT,
             vault.publicKey,
             vaultOwnerPubkey
           )
@@ -206,57 +213,62 @@ export default () => {
     try {
       let roundInfo = await getRoundInfo(roundPubkey);
       let round = new PublicKey(roundPubkey);
-      let tmpTokenAccount = new Account();
 
+      const assoAccount = await SPLToken.Token.getAssociatedTokenAddress(
+        SPLToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+        SPLToken.TOKEN_PROGRAM_ID,
+        USDC_MINT,
+        wallet.publicKey
+      )
       const tx = new Transaction()
-        .add(
-          SystemProgram.createAccount({
-            fromPubkey: wallet.publicKey,
-            newAccountPubkey: tmpTokenAccount.publicKey,
-            lamports:
-              (await connection.getMinimumBalanceForRentExemption(
-                SPLToken.AccountLayout.span
-              )) + amount,
-            space: SPLToken.AccountLayout.span,
-            programId: SPLToken.TOKEN_PROGRAM_ID,
-          })
-        )
-        .add(
-          SPLToken.Token.createInitAccountInstruction(
-            SPLToken.TOKEN_PROGRAM_ID,
-            SPLToken.NATIVE_MINT,
-            tmpTokenAccount.publicKey,
-            wallet.publicKey
-          )
-        )
+        // .add(
+        //   SystemProgram.createAccount({
+        //     fromPubkey: wallet.publicKey,
+        //     newAccountPubkey: tmpTokenAccount.publicKey,
+        //     lamports:
+        //       (await connection.getMinimumBalanceForRentExemption(
+        //         SPLToken.AccountLayout.span
+        //       )) + amount,
+        //     space: SPLToken.AccountLayout.span,
+        //     programId: SPLToken.TOKEN_PROGRAM_ID,
+        //   })
+        // )
+        // .add(
+        //   SPLToken.Token.createInitAccountInstruction(
+        //     SPLToken.TOKEN_PROGRAM_ID,
+        //     SPLToken.NATIVE_MINT,
+        //     tmpTokenAccount.publicKey,
+        //     wallet.publicKey
+        //   )
+        // )
         .add(
           donateInstruction(
             programId,
             round,
-            tmpTokenAccount.publicKey,
-            SPLToken.NATIVE_MINT,
+            assoAccount,
+            USDC_MINT,
             roundInfo.vault,
             wallet.publicKey,
             amount,
-            9
+            6
           )
         )
-        .add(
-          SPLToken.Token.createCloseAccountInstruction(
-            SPLToken.TOKEN_PROGRAM_ID,
-            tmpTokenAccount.publicKey,
-            wallet.publicKey,
-            wallet.publicKey,
-            []
-          )
-        );
+        // .add(
+        //   SPLToken.Token.createCloseAccountInstruction(
+        //     SPLToken.TOKEN_PROGRAM_ID,
+        //     tmpTokenAccount.publicKey,
+        //     wallet.publicKey,
+        //     wallet.publicKey,
+        //     []
+        //   )
+        // );
 
       let { blockhash } = await connection.getRecentBlockhash();
       tx.recentBlockhash = blockhash;
       tx.feePayer = wallet.publicKey;
 
       let signedTx = await wallet.signTransaction(tx);
-      signedTx.partialSign(tmpTokenAccount);
+      // signedTx.partialSign(tmpTokenAccount);
       let txid = await connection.sendRawTransaction(signedTx.serialize());
 
       appendOutput("wait for donate");
@@ -272,7 +284,7 @@ export default () => {
       let assoAccount = await SPLToken.Token.getAssociatedTokenAddress(
         SPLToken.ASSOCIATED_TOKEN_PROGRAM_ID,
         SPLToken.TOKEN_PROGRAM_ID,
-        SPLToken.NATIVE_MINT,
+        new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
         wallet.publicKey
       );
       let voterPubkey = await getVoterPubkey(
@@ -280,6 +292,7 @@ export default () => {
         assoAccount,
         programId
       );
+      console.log(voterPubkey.toBase58())
       let voterInfo = await getVoterInfo(voterPubkey.toBase58());
       if (voterInfo !== undefined && voterInfo.isInit) {
         appendOutput("voter: " + voterPubkey.toBase58() + " already init");
@@ -390,7 +403,7 @@ export default () => {
             );
         }
       } catch (e) {
-        if (e.message == "Failed to find account") {
+        if (e.message === "Failed to find account") {
           tmpTokenAccount = new Account();
           tx.add(
             SPLToken.Token.createAssociatedTokenAccountInstruction(
@@ -466,7 +479,7 @@ export default () => {
       tx.recentBlockhash = blockhash;
       tx.feePayer = wallet.publicKey;
       let signedTx;
-      if (tmpTokenAccount != undefined) {
+      if (tmpTokenAccount !== undefined) {
         signedTx = await tx.partialSign(tmpTokenAccount);
       }
       signedTx = await wallet.signTransaction(tx);
@@ -559,6 +572,36 @@ export default () => {
     }
   }
 
+  async function banProject(projectPubkey: string, amount: string) {
+    try {
+      const tx = new Transaction();
+      let projectInfo = await getProjectInfo(projectPubkey);
+
+      tx.add(
+        banProjectInstruction(
+          programId,
+          projectInfo.round,
+          wallet.publicKey,
+          new PublicKey(projectPubkey),
+          amount,
+        )
+      );
+
+      let { blockhash } = await connection.getRecentBlockhash();
+      tx.recentBlockhash = blockhash;
+      tx.feePayer = wallet.publicKey;
+      let signedTx;
+      signedTx = await wallet.signTransaction(tx);
+      let txid = await connection.sendRawTransaction(signedTx.serialize());
+      appendOutput("wait for ban project");
+      await connection.confirmTransaction(txid);
+      appendOutput("ban project success");
+    } catch (e) {
+      appendOutput("ban project error: " + e.message);
+    }
+  }
+
+
   async function getRoundInfo(roundPubkey: string) {
     try {
       const info = await connection.getAccountInfo(new PublicKey(roundPubkey));
@@ -602,7 +645,7 @@ export default () => {
       const encodeInfo = ProjectAccountDataLayout.decode(data);
       encodeInfo.round = new PublicKey(encodeInfo.round);
       encodeInfo.owner = new PublicKey(encodeInfo.owner);
-      encodeInfo.withdraw = encodeInfo.withdraw == 1;
+      encodeInfo.withdraw = encodeInfo.withdraw === 1;
       encodeInfo.votes = new BN(encodeInfo.votes, 10, "le");
       encodeInfo.area = new BN(encodeInfo.area, 10, "le");
       encodeInfo.area_sqrt = new BN(encodeInfo.area_sqrt, 10, "le");
@@ -630,7 +673,7 @@ export default () => {
       }
       const data = Buffer.from(info.data);
       const encodeInfo = VoterAccountDataLayout.decode(data);
-      encodeInfo.isInit = encodeInfo.isInit == 1;
+      encodeInfo.isInit = encodeInfo.isInit === 1;
       encodeInfo.votes = new BN(encodeInfo.votes, 10, "le");
       encodeInfo.votes_sqrt = new BN(encodeInfo.votes_sqrt, 10, "le");
 
@@ -640,6 +683,27 @@ export default () => {
       votes: ${encodeInfo.votes.toString()}\n
       votes sqrt: ${encodeInfo.votes_sqrt.toString()}`);
       return encodeInfo;
+    } catch (e) {
+      appendOutput(e.message);
+    }
+  }
+
+  async function test(publicKey: string) {
+    const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
+    try {
+      let assoAccount = await SPLToken.Token.getAssociatedTokenAddress(
+        SPLToken.ASSOCIATED_TOKEN_PROGRAM_ID,
+        SPLToken.TOKEN_PROGRAM_ID,
+        USDC_MINT,
+        new PublicKey(publicKey),
+      );
+      let accountInfo = await connection.getTokenAccountsByOwner(new PublicKey(publicKey), {
+        mint: USDC_MINT,
+      })
+      
+      console.log(accountInfo.value[0].pubkey.toBase58())
+
+      appendOutput(assoAccount.toBase58())
     } catch (e) {
       appendOutput(e.message);
     }
@@ -747,6 +811,26 @@ export default () => {
           <div>
             <input
               type="text"
+              value={banProjectPubkey}
+              onChange={(v) => setBanProjectPubkey(v.target.value)}
+              placeholder="project pubkey (base58)"
+            ></input>
+            <input
+              type="text"
+              pattern="[0-9]*"
+              value={banAmount}
+              onChange={(v) => setBanAmount(v.target.value)}
+              placeholder="amount"
+            ></input>
+            <button
+              onClick={() => banProject(banProjectPubkey, banAmount)}
+            >
+              Ban
+            </button>
+          </div>
+          <div>
+            <input
+              type="text"
               value={closeRoundPubkey}
               onChange={(v) => setCloseRoundPubkey(v.target.value)}
               placeholder="round pubkey (base58)"
@@ -765,7 +849,7 @@ export default () => {
             <input
               type="text"
               value={withdrawFeeToPubkey}
-              onChange={(v) => setWithdrawToPubkey(v.target.value)}
+              onChange={(v) => setWithdrawFeeToPubkey(v.target.value)}
               placeholder="to pubkey (base58)"
             ></input>
             <button
@@ -780,6 +864,16 @@ export default () => {
       )}
       <div>
         <h1>Query</h1>
+      </div>
+      <div>
+        <input
+          type="text"
+          value={testPubkey}
+          onChange={(v) => setTestPubkey(v.target.value)}
+        ></input>
+        <button onClick={() => test(testPubkey)}>
+          test
+        </button>
       </div>
       <div>
         <input
@@ -834,6 +928,7 @@ enum Instruction {
   Withdraw,
   EndRound,
   WithdrawFee,
+  BanProject, // { ban_amount: U256 },
 }
 
 function createStartRoundInstruction(
@@ -1276,6 +1371,52 @@ function withdrawFeeInstruction(
       pubkey: SPLToken.TOKEN_PROGRAM_ID,
       isSigner: false,
       isWritable: false,
+    },
+  ];
+
+  return new TransactionInstruction({
+    keys,
+    programId: programId,
+    data,
+  });
+}
+
+function banProjectInstruction(
+  programId: PublicKey,
+  roundPubkey: PublicKey,
+  ownerPubkey: PublicKey,
+  projectPubkey: PublicKey,
+  amount: string,
+): TransactionInstruction {
+  const dataLayout = BufferLayout.struct([
+    BufferLayout.u8("instruction"),
+    BufferLayout.blob(32, "ban_amount"),
+  ]);
+
+  const data = Buffer.alloc(dataLayout.span);
+  dataLayout.encode(
+    {
+      instruction: Instruction.BanProject,
+      ban_amount: Buffer.from(new BN(amount).toArray("le", 32))
+    },
+    data
+  );
+
+  let keys = [
+    {
+      pubkey: roundPubkey,
+      isSigner: false,
+      isWritable: true,
+    },
+    {
+      pubkey: ownerPubkey,
+      isSigner: true,
+      isWritable: false,
+    },
+    {
+      pubkey: projectPubkey,
+      isSigner: false,
+      isWritable: true,
     },
   ];
 
