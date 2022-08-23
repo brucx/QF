@@ -25,7 +25,11 @@ use spl_token;
 
 pub struct Processor {}
 impl Processor {
-    pub fn process_start_round(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    pub fn process_start_round(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        ratio: u8,
+    ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
         let new_round_info = next_account_info(account_info_iter)?;
         let round_owner_info = next_account_info(account_info_iter)?;
@@ -56,6 +60,7 @@ impl Processor {
         }
 
         round.status = RoundStatus::Ongoing;
+        round.ratio = ratio;
         round.fund = vault.amount;
         round.owner = *round_owner_info.key;
         round.vault = *vault_info.key;
@@ -134,7 +139,7 @@ impl Processor {
         if round_info.owner != program_id {
             return Err(ProgramError::IncorrectProgramId);
         }
-        let round = Round::unpack(&round_info.data.borrow())?;
+        let mut round = Round::unpack(&round_info.data.borrow())?;
         if round.status != RoundStatus::Ongoing {
             return Err(QFError::RoundStatusError.into());
         }
@@ -160,6 +165,9 @@ impl Processor {
         project.withdraw = false;
         project.votes = 0;
         project.area = U256::zero();
+
+        round.project_number = round.project_number.checked_add(1).unwrap();
+        Round::pack(round, &mut round_info.data.borrow_mut())?;
 
         Project::pack(project, &mut new_project_info.data.borrow_mut())?;
 
@@ -333,7 +341,20 @@ impl Processor {
             .unwrap()
             .checked_add(&new_votes_sqrt)
             .unwrap();
-        project.area = project_area_sqrt.checked_pow(2).unwrap().value;
+        project.area = project_area_sqrt.checked_pow(1).unwrap().value;
+
+        round.total_votes += U256::from(amount);
+        let votes = U256::from(project.votes);
+
+        if votes > round.top_votes {
+            round.top_votes = votes;
+        } 
+        if round.min_votes == U256::from(0) || votes < round.min_votes {
+            round.min_votes = votes;
+            round.min_votes_p = *project_info.key;
+        } else if round.min_votes_p == *project_info.key {
+            round.min_votes = votes;
+        }
 
         round.area = round.area.checked_add(project.area).unwrap();
         Round::pack(round, &mut round_info.data.borrow_mut())?;
@@ -394,20 +415,66 @@ impl Processor {
         ];
 
         let fund = U256::from(round.fund);
-        let mut amount = project.votes;
+        let mut amount = U256::from(project.votes);
+        let ratio = U256::from(5);
+        if round.total_votes > U256::from(0) {
+            let a = U256::from(
+                round
+                    .total_votes
+                    .checked_div(U256::from(round.project_number))
+                    .unwrap(),
+            );
+            let t = round.top_votes;
+            let m = round.min_votes;
+            let d = t
+                .checked_sub(a)
+                .unwrap()
+                .checked_add(a.checked_sub(m).unwrap().checked_mul(ratio).unwrap())
+                .unwrap();
+            msg!("a: {}, t: {}, m: {}, d: {}, amount: {}", a, t, m, d, amount);
+            if d > U256::from(0) {
+                let s = ratio
+                    .checked_sub(U256::from(1))
+                    .unwrap()
+                    .checked_mul(a)
+                    .unwrap()
+                    .checked_div(d)
+                    .unwrap();
+                msg!("s: {}", s);
+                if s < U256::from(1) {
+                    if round.total_votes > a {
+                        amount = a
+                            .checked_add(s.checked_mul(amount.checked_sub(a).unwrap()).unwrap())
+                            .unwrap();
+                    } else {
+                        amount = amount
+                            .checked_add(
+                                a.checked_sub(amount)
+                                    .unwrap()
+                                    .checked_mul(U256::from(1) - s)
+                                    .unwrap(),
+                            )
+                            .unwrap();
+                    }
+                }
+            }
+        }
 
         amount = amount
             .checked_add(
                 fund.checked_mul(project.area)
                     .unwrap()
                     .checked_div(round.area)
-                    .unwrap()
-                    .as_u64(),
+                    .unwrap(),
             )
             .unwrap();
 
         // charge 5% fee
-        let fee = amount.checked_mul(5).unwrap().checked_div(100).unwrap();
+        let fee = amount
+            .checked_mul(U256::from(5))
+            .unwrap()
+            .checked_div(U256::from(100))
+            .unwrap();
         let amount = amount.checked_sub(fee).unwrap();
 
         invoke_signed(
@@ -417,7 +484,7 @@ impl Processor {
                 &to_info.key,
                 &vault_owner_info.key,
                 &[&vault_owner_info.key],
-                amount,
+                amount.as_u64(),
             )?,
             &[
                 vault_info.clone(),
@@ -431,7 +498,7 @@ impl Processor {
         project.withdraw = true;
         Project::pack(project, &mut project_info.data.borrow_mut())?;
 
-        round.fee = round.fee.checked_add(fee).unwrap();
+        round.fee = round.fee.checked_add(fee.as_u64()).unwrap();
         Round::pack(round, &mut round_info.data.borrow_mut())?;
 
         Ok(())
@@ -529,7 +596,7 @@ impl Processor {
 
     pub fn process_ban_project(
         program_id: &Pubkey,
-        accounts: &[AccountInfo], 
+        accounts: &[AccountInfo],
         ban_amount: U256,
     ) -> ProgramResult {
         let account_info_iter = &mut accounts.iter();
@@ -578,9 +645,9 @@ impl Processor {
     pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], input: &[u8]) -> ProgramResult {
         let instruction = QFInstruction::unpack(input)?;
         match instruction {
-            QFInstruction::StartRound => {
+            QFInstruction::StartRound { ratio } => {
                 msg!("Instruction: StartRound");
-                Self::process_start_round(program_id, accounts)
+                Self::process_start_round(program_id, accounts, ratio)
             }
             QFInstruction::Donate { amount, decimals } => {
                 msg!("Instruction: Donate");

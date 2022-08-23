@@ -1,14 +1,12 @@
 use solana_program::program_error::ProgramError;
+use spl_math::uint::U256;
 use std::convert::TryInto;
 use std::mem::size_of;
-use spl_math::{
-    uint::U256,
-};
 
 #[repr(C)]
 #[derive(Debug)]
 pub enum QFInstruction {
-    StartRound,
+    StartRound { ratio: u8 },
     Donate { amount: u64, decimals: u8 },
     RegisterProject,
     InitVoter,
@@ -25,7 +23,15 @@ impl QFInstruction {
             .split_first()
             .ok_or(ProgramError::InvalidInstructionData)?;
         Ok(match tag {
-            0 => Self::StartRound,
+            0 => {
+                let (ratio, _rest) = rest.split_at(1);
+                let ratio = ratio
+                  .try_into()
+                  .ok()
+                  .map(u8::from_le_bytes)
+                  .ok_or(ProgramError::InvalidInstructionData)?;
+                Self::StartRound { ratio }
+            },
             1 | 4 => {
                 let (amount, rest) = rest.split_at(8);
                 let amount = amount
@@ -55,7 +61,7 @@ impl QFInstruction {
                     .map(U256::from_little_endian)
                     .ok_or(ProgramError::InvalidInstructionData)?;
                 Self::BanProject { ban_amount }
-            },
+            }
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -63,7 +69,10 @@ impl QFInstruction {
     pub fn pack(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match self {
-            Self::StartRound => buf.push(0),
+            Self::StartRound{ratio} => {
+                buf.push(0);
+                buf.extend_from_slice(&ratio.to_le_bytes());
+            },
             &Self::Donate { amount, decimals } => {
                 buf.push(1);
                 buf.extend_from_slice(&amount.to_le_bytes());
@@ -84,7 +93,7 @@ impl QFInstruction {
                 let mut dst: [u8; 32] = [0; 32];
                 ban_amount.to_little_endian(&mut dst);
                 buf.extend_from_slice(&dst);
-            },
+            }
         };
         buf
     }

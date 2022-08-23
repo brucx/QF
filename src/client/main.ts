@@ -18,7 +18,7 @@ import * as fs from "mz/fs";
 
 async function main() {
   // create connection
-  let url = "http://localhost:8899";
+  let url = "http://127.0.0.1:8899";
   let connection = new Connection(url, "singleGossip");
   const version = await connection.getVersion();
   console.log("Connection to cluster established:", url, version);
@@ -126,7 +126,7 @@ async function main() {
     SPLToken.NATIVE_MINT,
     vaultPubkey,
     Alice,
-    1e9,
+    100,
     9
   );
   console.log("=> Alice Vote Project 1", aliceVoteProject1TxHash);
@@ -151,7 +151,7 @@ async function main() {
     SPLToken.NATIVE_MINT,
     vaultPubkey,
     Alice,
-    1e9,
+    25,
     9
   );
   console.log("=> Alice Vote Project 2", aliceVoteProject2TxHash);
@@ -193,7 +193,7 @@ async function main() {
     SPLToken.NATIVE_MINT,
     vaultPubkey,
     bob,
-    1e9,
+    100,
     9
   );
 
@@ -219,7 +219,7 @@ async function main() {
     SPLToken.NATIVE_MINT,
     vaultPubkey,
     bob,
-    1e9,
+    100,
     9
   );
   console.log("=> Bob Vote Project 1 Again", bobVoteProject1AgainTxHash);
@@ -391,12 +391,16 @@ function createStartRoundInstruction(
   ownerPubkey: PublicKey,
   vaultPubkey: PublicKey
 ): TransactionInstruction {
-  const dataLayout = BufferLayout.struct([BufferLayout.u8("instruction")]);
+  const dataLayout = BufferLayout.struct([
+    BufferLayout.u8("instruction"),
+    BufferLayout.u8("ratio"),
+  ]);
 
   const data = Buffer.alloc(dataLayout.span);
   dataLayout.encode(
     {
       instruction: Instruction.StartRound,
+      ratio: 20,
     },
     data
   );
@@ -456,7 +460,7 @@ function registerProjectInstruction(
     {
       pubkey: roundPubkey,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     {
       pubkey: projectOwnerPubkey,
@@ -1191,20 +1195,31 @@ async function WithdrawFee(
 
 type Round = {
   roundStatus: number; // u8
+  ratio: number; // u8
   fund: BN; // u64
   fee: BN; // u64
+  project_number: BN; // u64
   vault: PublicKey;
   owner: PublicKey;
   area: BN; // u256
+  total_votes: BN; // u64
+  top_votes: BN; // u256
+  min_votes: BN; // u256
 };
 
 const RoundAccountDataLayout = BufferLayout.struct([
   BufferLayout.u8("roundStatus"),
+  BufferLayout.u8("ratio"),
   BufferLayout.blob(8, "fund"),
   BufferLayout.blob(8, "fee"),
+  BufferLayout.blob(8, "project_number"),
   BufferLayout.blob(32, "vault"),
   BufferLayout.blob(32, "owner"),
   BufferLayout.blob(32, "area"),
+  BufferLayout.blob(32, "total_votes"),
+  BufferLayout.blob(32, "top_votes"),
+  BufferLayout.blob(32, "min_votes"),
+  BufferLayout.blob(32, "min_votes_p"),
 ]);
 
 async function printRoundInfo(
@@ -1215,11 +1230,16 @@ async function printRoundInfo(
   console.log("================ Round ================");
   console.log("round:", round.toBase58());
   console.log("status", info.roundStatus);
+  console.log("ratio", info.ratio);
   console.log("owner", info.owner.toBase58());
   console.log("vault", info.vault.toBase58());
   console.log("fund", info.fund.toString());
   console.log("fee", info.fee.toString());
+  console.log("project_number", info.project_number.toString());
   console.log("area", info.area.toString());
+  console.log("total_votes", info.total_votes.toString());
+  console.log("top_votes", info.top_votes.toString());
+  console.log("min_votes", info.min_votes.toString());
   console.log("");
 }
 
@@ -1236,9 +1256,13 @@ async function getRoundInfo(
   const roundInfo = RoundAccountDataLayout.decode(data);
   roundInfo.fund = new BN(roundInfo.fund, 10, "le");
   roundInfo.fee = new BN(roundInfo.fee, 10, "le");
+  roundInfo.project_number = new BN(roundInfo.project_number, 10, "le");
   roundInfo.vault = new PublicKey(roundInfo.vault);
   roundInfo.owner = new PublicKey(roundInfo.owner);
   roundInfo.area = new BN(roundInfo.area, 10, "le");
+  roundInfo.total_votes = new BN(roundInfo.total_votes, 10, "le");
+  roundInfo.top_votes = new BN(roundInfo.top_votes, 10, "le");
+  roundInfo.min_votes = new BN(roundInfo.min_votes, 10, "le");
 
   return roundInfo;
 }

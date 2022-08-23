@@ -27,11 +27,17 @@ impl Default for RoundStatus {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Round {
     pub status: RoundStatus,
+    pub ratio: u8,
     pub fund: u64,
     pub fee: u64,
+    pub project_number: u64,
     pub vault: Pubkey,
     pub owner: Pubkey,
     pub area: U256,
+    pub total_votes: U256,
+    pub top_votes: U256,
+    pub min_votes: U256,
+    pub min_votes_p: Pubkey,
 }
 impl Sealed for Round {}
 impl IsInitialized for Round {
@@ -40,38 +46,81 @@ impl IsInitialized for Round {
     }
 }
 impl Pack for Round {
-    const LEN: usize = 113;
+    const LEN: usize = 250;
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
-        let src = array_ref![src, 0, 113];
-        let (status, fund, fee, vault, owner, area) = array_refs![src, 1, 8, 8, 32, 32, 32];
+        let src = array_ref![src, 0, 250];
+        let (
+            status,
+            ratio,
+            fund,
+            fee,
+            project_number,
+            vault,
+            owner,
+            area,
+            total_votes,
+            top_votes,
+            min_votes,
+            min_votes_p,
+        ) = array_refs![src, 1, 1, 8, 8, 8, 32, 32, 32, 32, 32, 32, 32];
         Ok(Round {
             status: RoundStatus::try_from_primitive(status[0])
                 .or(Err(ProgramError::InvalidAccountData))?,
+            ratio: u8::from_le_bytes(*ratio),
             fund: u64::from_le_bytes(*fund),
             fee: u64::from_le_bytes(*fee),
+            project_number: u64::from_le_bytes(*project_number),
             vault: Pubkey::new_from_array(*vault),
             owner: Pubkey::new_from_array(*owner),
             area: U256::from_little_endian(area),
+            total_votes: U256::from_little_endian(total_votes),
+            top_votes: U256::from_little_endian(top_votes),
+            min_votes: U256::from_little_endian(min_votes),
+            min_votes_p:Pubkey::new_from_array(*min_votes_p),
         })
     }
     fn pack_into_slice(&self, dst: &mut [u8]) {
-        let dst = array_mut_ref![dst, 0, 113];
-        let (status_dst, fund_dst, fee_dst, vault_dst, owner_dst, area_dst) =
-            mut_array_refs![dst, 1, 8, 8, 32, 32, 32];
+        let dst = array_mut_ref![dst, 0, 250];
+        let (
+            status_dst,
+            ratio_dst,
+            fund_dst,
+            fee_dst,
+            project_number_dst,
+            vault_dst,
+            owner_dst,
+            area_dst,
+            total_votes_dst,
+            top_votes_dst,
+            min_votes_dst,
+            min_votes_p_dst,
+        ) = mut_array_refs![dst, 1,1, 8, 8, 8, 32, 32, 32, 32, 32, 32,32];
         let &Round {
             status,
+            ratio,
             fund,
             fee,
+            project_number,
             ref owner,
             ref vault,
             area,
+            total_votes,
+            top_votes,
+            min_votes,
+            min_votes_p,
         } = self;
         status_dst[0] = status as u8;
+        *ratio_dst = ratio.to_le_bytes();
         *fund_dst = fund.to_le_bytes();
         *fee_dst = fee.to_le_bytes();
+        *project_number_dst = project_number.to_le_bytes();
         owner_dst.copy_from_slice(owner.as_ref());
         vault_dst.copy_from_slice(vault.as_ref());
         area.to_little_endian(area_dst);
+        total_votes.to_little_endian(total_votes_dst);
+        top_votes.to_little_endian(top_votes_dst);
+        min_votes.to_little_endian(min_votes_dst);
+        min_votes_p_dst.copy_from_slice(min_votes_p.as_ref());
     }
 }
 
