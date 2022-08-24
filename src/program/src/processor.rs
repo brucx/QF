@@ -343,6 +343,14 @@ impl Processor {
             .unwrap();
         project.area = project_area_sqrt.checked_pow(1).unwrap().value;
 
+        project.area_sqrt = project_area_sqrt.value;
+        project.votes = project.votes.checked_add(amount).unwrap();
+        Project::pack(project, &mut project_info.data.borrow_mut())?;
+
+        voter.votes = voter.votes.checked_add(amount).unwrap();
+        voter.votes_sqrt = new_votes_sqrt.value;
+        Voter::pack(voter, &mut voter_info.data.borrow_mut())?;
+
         round.total_votes += U256::from(amount);
         let votes = U256::from(project.votes);
 
@@ -358,14 +366,6 @@ impl Processor {
 
         round.area = round.area.checked_add(project.area).unwrap();
         Round::pack(round, &mut round_info.data.borrow_mut())?;
-
-        project.area_sqrt = project_area_sqrt.value;
-        project.votes = project.votes.checked_add(amount).unwrap();
-        Project::pack(project, &mut project_info.data.borrow_mut())?;
-
-        voter.votes = voter.votes.checked_add(amount).unwrap();
-        voter.votes_sqrt = new_votes_sqrt.value;
-        Voter::pack(voter, &mut voter_info.data.borrow_mut())?;
 
         Ok(())
     }
@@ -416,7 +416,8 @@ impl Processor {
 
         let fund = U256::from(round.fund);
         let mut amount = U256::from(project.votes);
-        let ratio = U256::from(5);
+
+        let ratio = U256::from(round.ratio);
         if round.total_votes > U256::from(0) {
             let a = U256::from(
                 round
@@ -424,14 +425,16 @@ impl Processor {
                     .checked_div(U256::from(round.project_number))
                     .unwrap(),
             );
+            msg!("amount: {}, a: {}", amount, a);
             let t = round.top_votes;
             let m = round.min_votes;
+            msg!("t: {}, m: {}", t, m);
             let d = t
                 .checked_sub(a)
                 .unwrap()
                 .checked_add(a.checked_sub(m).unwrap().checked_mul(ratio).unwrap())
                 .unwrap();
-            msg!("a: {}, t: {}, m: {}, d: {}, amount: {}", a, t, m, d, amount);
+            msg!("d: {}", d);
             if d > U256::from(0) {
                 let s = ratio
                     .checked_sub(U256::from(1))
