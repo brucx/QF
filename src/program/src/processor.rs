@@ -356,7 +356,7 @@ impl Processor {
 
         if votes > round.top_votes {
             round.top_votes = votes;
-        } 
+        }
         if round.min_votes == U256::from(0) || votes < round.min_votes {
             round.min_votes = votes;
             round.min_votes_p = *project_info.key;
@@ -416,6 +416,7 @@ impl Processor {
 
         let fund = U256::from(round.fund);
         let mut amount = U256::from(project.votes);
+        let mut votes = U256::from(project.votes);
 
         let ratio = U256::from(round.ratio);
         if round.total_votes > U256::from(0) {
@@ -425,7 +426,7 @@ impl Processor {
                     .checked_div(U256::from(round.project_number))
                     .unwrap(),
             );
-            msg!("amount: {}, a: {}", amount, a);
+            msg!("votes: {}, a: {}", votes, a);
             let t = round.top_votes;
             let m = round.min_votes;
             msg!("t: {}, m: {}", t, m);
@@ -445,14 +446,14 @@ impl Processor {
                     .unwrap();
                 msg!("s: {}", s);
                 if s < U256::from(1) {
-                    if round.total_votes > a {
-                        amount = a
-                            .checked_add(s.checked_mul(amount.checked_sub(a).unwrap()).unwrap())
+                    if votes > a {
+                        votes = a
+                            .checked_add(s.checked_mul(votes.checked_sub(a).unwrap()).unwrap())
                             .unwrap();
                     } else {
-                        amount = amount
+                        votes = votes
                             .checked_add(
-                                a.checked_sub(amount)
+                                a.checked_sub(votes)
                                     .unwrap()
                                     .checked_mul(U256::from(1) - s)
                                     .unwrap(),
@@ -465,7 +466,7 @@ impl Processor {
 
         amount = amount
             .checked_add(
-                fund.checked_mul(project.area)
+                fund.checked_mul(votes)
                     .unwrap()
                     .checked_div(round.area)
                     .unwrap(),
@@ -548,9 +549,6 @@ impl Processor {
         let mut round = Round::unpack(&round_info.data.borrow())?;
         if round.status != RoundStatus::Finished {
             return Err(QFError::RoundStatusError.into());
-        }
-        if round.fee == 0 {
-            return Err(ProgramError::InsufficientFunds);
         }
 
         if owner_info.key != &round.owner {

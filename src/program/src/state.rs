@@ -76,7 +76,7 @@ impl Pack for Round {
             total_votes: U256::from_little_endian(total_votes),
             top_votes: U256::from_little_endian(top_votes),
             min_votes: U256::from_little_endian(min_votes),
-            min_votes_p:Pubkey::new_from_array(*min_votes_p),
+            min_votes_p: Pubkey::new_from_array(*min_votes_p),
         })
     }
     fn pack_into_slice(&self, dst: &mut [u8]) {
@@ -94,7 +94,7 @@ impl Pack for Round {
             top_votes_dst,
             min_votes_dst,
             min_votes_p_dst,
-        ) = mut_array_refs![dst, 1,1, 8, 8, 8, 32, 32, 32, 32, 32, 32,32];
+        ) = mut_array_refs![dst, 1, 1, 8, 8, 8, 32, 32, 32, 32, 32, 32, 32];
         let &Round {
             status,
             ratio,
