@@ -351,20 +351,21 @@ impl Processor {
         voter.votes_sqrt = new_votes_sqrt.value;
         Voter::pack(voter, &mut voter_info.data.borrow_mut())?;
 
-        round.total_votes += U256::from(amount);
-        let votes = U256::from(project.votes);
+        
+        let votes = U256::from(project.area).checked_div(U256::from(ONE)).unwrap();
 
-        if votes > round.top_votes {
-            round.top_votes = votes;
+        if votes > round.top_area {
+            round.top_area = votes;
         }
-        if round.min_votes == U256::from(0) || votes < round.min_votes {
-            round.min_votes = votes;
-            round.min_votes_p = *project_info.key;
-        } else if round.min_votes_p == *project_info.key {
-            round.min_votes = votes;
+        if round.min_area == U256::from(0) || votes < round.min_area {
+            round.min_area = votes;
+            round.min_area_p = *project_info.key;
+        } else if round.min_area_p == *project_info.key {
+            round.min_area = votes;
         }
 
         round.area = round.area.checked_add(project.area).unwrap();
+        round.total_area = round.area.checked_div(U256::from(ONE)).unwrap();
         Round::pack(round, &mut round_info.data.borrow_mut())?;
 
         Ok(())
@@ -414,22 +415,30 @@ impl Processor {
             &[Pubkey::find_program_address(&[&round.owner.to_bytes()], &program_id).1],
         ];
 
+
+        // ============= begin of cal amount ===============
+        let mut votes = U256::from(project.area).checked_div(U256::from(ONE)).unwrap();
         let fund = U256::from(round.fund);
         let mut amount = U256::from(project.votes);
-        let mut votes = U256::from(project.votes);
+        msg!("votes: {}", amount);
+        msg!("amount: {}", amount);
+        msg!("fund: {}", fund);
+        msg!("totalVotes: {}", round.total_area);
+        msg!("project_number: {}", round.project_number);
+        msg!("topVotes: {}", round.top_area);
+        msg!("minVotes: {}", round.min_area);
+        msg!("ratio: {}",round.ratio);
 
         let ratio = U256::from(round.ratio);
-        if round.total_votes > U256::from(0) {
+        if round.total_area > U256::from(0) {
             let a = U256::from(
                 round
-                    .total_votes
+                    .total_area
                     .checked_div(U256::from(round.project_number))
                     .unwrap(),
             );
-            msg!("votes: {}, a: {}", votes, a);
-            let t = round.top_votes;
-            let m = round.min_votes;
-            msg!("t: {}, m: {}", t, m);
+            let t = round.top_area;
+            let m = round.min_area;
             let d = t
                 .checked_sub(a)
                 .unwrap()
@@ -468,7 +477,7 @@ impl Processor {
             .checked_add(
                 fund.checked_mul(votes)
                     .unwrap()
-                    .checked_div(round.area)
+                    .checked_div(round.total_area)
                     .unwrap(),
             )
             .unwrap();
@@ -480,6 +489,7 @@ impl Processor {
             .checked_div(U256::from(100))
             .unwrap();
         let amount = amount.checked_sub(fee).unwrap();
+        // ============= end of cal amount ===============
 
         invoke_signed(
             &spl_token::instruction::transfer(
